@@ -1,32 +1,47 @@
-from products import dao
+import json
+from collections import defaultdict
+from cart import dao
+from products import Product, get_product
 
-
-class Product:
-    def _init_(self, id: int, name: str, description: str, cost: float, qty: int = 0):
+class Cart:
+    def _init_(self, id: int, username: str, contents: list[Product], cost: float):
         self.id = id
-        self.name = name
-        self.description = description
+        self.username = username
+        self.contents = contents
         self.cost = cost
-        self.qty = qty
 
     @staticmethod
     def load(data):
-        return Product(data['id'], data['name'], data['description'], data['cost'], data['qty'])
+        return Cart(data['id'], data['username'], data['contents'], data['cost'])
 
-def list_products() -> list[Product]:
-    # Load all products in a single operation
-    return [Product.load(product) for product in dao.list_products()]
+def get_cart(username: str) -> list[Product]:
+    # Retrieve cart details from the database
+    cart_details = dao.get_cart(username)
+    if not cart_details:
+        return []
 
-def get_product(product_id: int) -> Product:
-    # Directly load product from the DAO
-    return Product.load(dao.get_product(product_id))
+    # Parse and aggregate all product IDs
+    product_counts = defaultdict(int)
+    for cart_detail in cart_details:
+        for item in json.loads(cart_detail['contents']):
+            product_counts[item] += 1
 
-def add_product(product: dict):
-    # Pass product data directly to the DAO
-    dao.add_product(product)
+    # Fetch product details for unique product IDs in bulk
+    unique_products = list(product_counts.keys())
+    products_data = {prod_id: get_product(prod_id) for prod_id in unique_products}
 
-def update_qty(product_id: int, qty: int):
-    # Validate and update product quantity
-    if qty < 0:
-        raise ValueError('Quantity cannot be negative')
-    dao.update_qty(product_id, qty)
+    # Rebuild the full list of products in the order they appear in the cart
+    result = []
+    for prod_id in unique_products:
+        result.extend([products_data[prod_id]] * product_counts[prod_id])
+
+    return result
+
+def add_to_cart(username: str, product_id: int):
+    dao.add_to_cart(username, product_id)
+
+def remove_from_cart(username: str, product_id: int):
+    dao.remove_from_cart(username, product_id)
+
+def delete_cart(username: str):
+    dao.delete_cart(username)
